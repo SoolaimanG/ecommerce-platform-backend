@@ -131,6 +131,13 @@ const ProductSetSchema = new mongoose.Schema<IBuySet>({
   completeSetId: { type: String, ref: "Product", required: true },
 });
 
+const NewLetterSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, unique: true },
+  },
+  { timestamps: true }
+);
+
 const ProductModel = mongoose.model("product", ProductSchema);
 const UserModel = mongoose.model("user", UserSchema);
 const OrderModel = mongoose.model("order", OrderSchema);
@@ -142,6 +149,7 @@ const StorePromotionModel = mongoose.model(
   StorePromotionSchema
 );
 const AdminMessageModel = mongoose.model("adminMessage", AdminMessageSchema);
+const NewLetterModel = mongoose.model("newsletter", NewLetterSchema);
 
 export {
   ProductModel,
@@ -152,4 +160,5 @@ export {
   StorePromotionModel,
   AdminMessageModel,
   ProductSetModel,
+  NewLetterModel,
 };

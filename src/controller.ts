@@ -17,6 +17,7 @@ import {
 import {
   AdminMessageModel,
   CollectionModel,
+  NewLetterModel,
   OrderModel,
   ProductModel,
   ProductSetModel,
@@ -448,26 +449,22 @@ export const getUser = async (req: express.Request, res: express.Response) => {
     const { userId, userEmail } = req.user;
 
     // Find the user by userId or userEmail
-    let user = await UserModel.findOne({
-      $or: [{ _id: userId }, { email: userEmail }],
-    });
+    let user = await UserModel.findById(userId);
 
     if (!user) {
       return res.status(404).json(httpStatusResponse(404, "User not found"));
     }
 
     // Get the user's recent orders (limit to 5 most recent) based on userId or email
-    const recentOrders = await OrderModel.find({
-      $or: [{ userId }, { email: userEmail }],
-    })
-      .sort({ orderDate: -1 }) // Sort by latest order first
+    const recentOrder = await OrderModel.find({ email: userEmail })
+      .sort("createdAt") // Sort by latest order first
       .limit(5); // Limit to the most recent 5 orders
 
     // Use `findOneAndUpdate` to update the user and return the updated user
-    user = await UserModel.findOneAndUpdate(
-      { _id: userId }, // Update based on userId
-      { recentOrder: recentOrders || [] }, // Set recentOrder to the list of recent order IDs
-      { new: true } // Return the updated document
+    user = await UserModel.findByIdAndUpdate(
+      userId,
+      { recentOrder },
+      { new: true }
     );
 
     // Return the updated user details
@@ -1684,6 +1681,36 @@ export const sendOrderReminder = async (
         )
       );
   } catch (error) {
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const joinNewsLetter = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { email } = req.body;
+
+    const isValidEmail = /^[\w.-]+@[a-zA-Z\d.-]+\.[a-zA-Z]{2,}$/.test(email);
+
+    if (!(email && isValidEmail))
+      return res
+        .status(400)
+        .json(httpStatusResponse(400, "Valid email is required"));
+
+    await NewLetterModel.create({ email });
+
+    return res
+      .status(200)
+      .json(
+        httpStatusResponse(
+          200,
+          "You have successfully joined our new-letter, Thank you"
+        )
+      );
+  } catch (error) {
+    console.log(error);
     return res.status(500).json(httpStatusResponse(500));
   }
 };

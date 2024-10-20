@@ -39,6 +39,7 @@ import {
   getTopSellers,
   getUser,
   getUsers,
+  joinNewsLetter,
   recievePayment,
   sendMessageToUsers,
   sendOrderReminder,
@@ -61,6 +62,7 @@ router.get("/product-set/", getProductSet);
 router.get("/products/", getProducts);
 router.get("/products/:productId/", getProduct);
 router.post("/calculate-items-price/", _calculatePriceItems);
+router.post("/join-newsletter/", joinNewsLetter);
 router.get("/get-message/", getAdminMessage);
 router.get("/get-promo-banner/", getPromoBanner);
 router.patch("/cancel-order/:orderId", cancelOrder);

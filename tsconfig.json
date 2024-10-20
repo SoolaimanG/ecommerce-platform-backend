@@ -11,5 +11,5 @@
     "allowSyntheticDefaultImports": true,
     "resolvePackageJsonImports": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "src/index.ts"]
 }

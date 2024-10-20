@@ -1,19 +1,16 @@
-import http from "http";
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import compression from "compression";
 import session from "express-session";
-
 import { openConnectionPool } from "./helper";
 import router from "./router";
 
 const app = express();
-const PORT = 3000;
 
+// Middleware setup
 app.use(cors({ credentials: true }));
-
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(compression());
@@ -25,12 +22,17 @@ app.use(
   })
 );
 
-// Routing
-app.use("/api/v1/", router());
+// Call the openConnectionPool asynchronously and handle any potential errors
+openConnectionPool()
+  .then(() => {
+    console.log("Database connection established");
+  })
+  .catch((error) => {
+    console.error("Failed to connect to the database:", error);
+  });
 
-const server = http.createServer(app);
+// Router setup
+app.use("/", router());
 
-server.listen(PORT, async () => {
-  await openConnectionPool();
-  console.log(`Server running on ${process.env.DOMAIN || ""}`);
-});
+// Export the app
+module.exports = app;
