@@ -33,8 +33,8 @@ const UserSchema = new mongoose.Schema<IUser>(
     avatar: { type: "String", default: null },
     name: { type: "String", required: true },
     address: {
-      deliveryAddress: { type: String },
-      isdefault: { type: Boolean, default: false },
+      state: { type: String },
+      lga: { type: String },
     },
     recentOrder: {
       orders: { type: "Number" },
@@ -71,12 +71,21 @@ const AdminMessageSchema = new mongoose.Schema<AdminMessage>(
 
 const OrderSchema = new mongoose.Schema<IOrder>(
   {
-    userId: { type: "String", ref: "User", required: true },
+    customer: {
+      name: { type: "String" },
+      email: { type: "String", required: true },
+      phoneNumber: { type: "String", required: true },
+      note: { type: "String" },
+    },
     items: [ProductSchema],
+    deliveryFee: { type: Number, required: true },
     orderDate: { type: Date, default: Date.now },
     totalAmount: { type: Number, required: true },
-    shippingAddress: { type: "String", required: true },
-    billingAddress: { type: "String", required: true },
+    address: {
+      state: { type: "String", required: true },
+      lga: { type: "String", required: true },
+      address: { type: "String", required: true },
+    },
     paymentStatus: {
       type: String,
       enum: ["Pending", "Paid", "Failed"],
@@ -86,11 +95,6 @@ const OrderSchema = new mongoose.Schema<IOrder>(
       type: String,
       enum: ["Pending", "Shipped", "Delivered", "Cancelled"],
       default: "Pending",
-    },
-    deliveryMethod: {
-      type: String,
-      enum: ["pick_up", "waybill"],
-      default: "pick_up",
     },
     paymentLink: { type: "String", required: true },
   },
@@ -133,7 +137,7 @@ const ProductSetSchema = new mongoose.Schema<IBuySet>({
 
 const NewLetterSchema = new mongoose.Schema(
   {
-    email: { type: String, required: true, unique: true },
+    email: { type: String, required: true },
   },
   { timestamps: true }
 );

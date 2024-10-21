@@ -7,14 +7,15 @@ import session from "express-session";
 import { openConnectionPool } from "./helper";
 import router from "./router";
 
-const app = express();
+// Initialize the server
+const server = express();
 
 // Middleware setup
-app.use(cors({ credentials: true }));
-app.use(bodyParser.json());
-app.use(cookieParser());
-app.use(compression());
-app.use(
+server.use(cors({ credentials: true }));
+server.use(bodyParser.json());
+server.use(cookieParser());
+server.use(compression());
+server.use(
   session({
     secret: process.env.JWT_SECRET!,
     saveUninitialized: true,
@@ -32,7 +33,13 @@ openConnectionPool()
   });
 
 // Router setup
-app.use("/", router());
+server.use("/", router());
 
-// Export the app
-module.exports = app;
+// Start the server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// Export the server
+export default server;

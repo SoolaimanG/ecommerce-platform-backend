@@ -1,5 +1,5 @@
 import express from "express";
-import { getAccessToken } from "./helper";
+import { getAccessToken, httpStatusResponse } from "./helper";
 import { JwtPayload, sign, verify } from "jsonwebtoken";
 import { IUserRole } from "../types"; // Import your IUserRole type
 
@@ -63,8 +63,10 @@ export const allowOnlyAdminsAndSuperUsers = (
 
   if (user.role == "user") {
     return res
-      .status(403)
-      .json({ message: "Access denied. Admins and SuperUsers Only" });
+      .status(401)
+      .json(
+        httpStatusResponse(401, "Access denied. Admins and SuperUsers Only")
+      );
   }
 
   next(); // Proceed to the next middleware/route handler

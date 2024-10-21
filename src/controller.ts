@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  calculateDeliveryPrice,
   calculateDiscountPercentage,
   calculatePriceItems,
   createCollection,
@@ -12,6 +13,8 @@ import {
   editPromoBanner,
   editUser,
   httpStatusResponse,
+  listLGAs,
+  listStates,
   sendEmail,
 } from "./helper";
 import {
@@ -33,6 +36,7 @@ import {
   IFlutterwaveWebHook,
   IGoogleUser,
   IOrder,
+  IOrderProducts,
   IProduct,
   IProductFilter,
   IPromotion,
@@ -42,7 +46,12 @@ import { chartColorFills } from "./data";
 import axios from "axios";
 import { sign } from "jsonwebtoken";
 import mongoose from "mongoose";
-import { failedOrderEmail, orderEmail, underpaidOrderEmail } from "./emails";
+import {
+  failedOrderEmail,
+  orderEmail,
+  successfulOrderEmail,
+  underpaidOrderEmail,
+} from "./emails";
 import { v4 as uuidv4 } from "uuid";
 
 export const authenticateUser = async (
@@ -82,8 +91,8 @@ export const authenticateUser = async (
       const u: IUser = {
         name: given_name || email.split("@")[0],
         address: {
-          deliveryAddress: "",
-          isdefault: false,
+          state: "",
+          lga: "",
         },
         avatar,
         email,
@@ -443,28 +452,83 @@ export const cancelOrder = async (
   }
 };
 
+export const getStates = async (_: express.Request, res: express.Response) => {
+  try {
+    const availableStatesForDelivery = listStates();
+
+    return res
+      .status(200)
+      .json(httpStatusResponse(200, undefined, availableStatesForDelivery));
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const getLGAs = async (req: express.Request, res: express.Response) => {
+  try {
+    const { state } = req.params;
+
+    const stateLGAs = listLGAs(state);
+
+    return res.status(200).json(httpStatusResponse(200, undefined, stateLGAs));
+  } catch (error) {
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const _calculateDeliveryPrice = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { state, lga } = req.query as unknown as {
+      state: string;
+      lga: string;
+    };
+
+    const price = calculateDeliveryPrice(state, lga);
+
+    return res.status(200).json(httpStatusResponse(200, undefined, { price }));
+  } catch (error) {
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
 //These routes are protected --> users && admin
 export const getUser = async (req: express.Request, res: express.Response) => {
   try {
     const { userId, userEmail } = req.user;
 
-    // Find the user by userId or userEmail
+    // Find the user by userId
     let user = await UserModel.findById(userId);
 
     if (!user) {
       return res.status(404).json(httpStatusResponse(404, "User not found"));
     }
 
-    // Get the user's recent orders (limit to 5 most recent) based on userId or email
-    const recentOrder = await OrderModel.find({ email: userEmail })
-      .sort("createdAt") // Sort by latest order first
-      .limit(5); // Limit to the most recent 5 orders
+    // Get the recent orders (limit to 5)
+    const recentOrders = await OrderModel.find({
+      "customer.email": userEmail,
+    })
+      .sort({ createdAt: -1 })
+      .limit(5);
 
-    // Use `findOneAndUpdate` to update the user and return the updated user
-    user = await UserModel.findByIdAndUpdate(
-      userId,
-      { recentOrder },
-      { new: true }
+    // Get the count of all recent orders
+    const recentOrderCount = await OrderModel.countDocuments({
+      "customer.email": userEmail,
+    });
+
+    // Update the user's recent orders
+    user = await UserModel.findOneAndUpdate(
+      { email: userEmail },
+      {
+        $set: {
+          "recentOrder.products": recentOrders,
+          "recentOrder.orders": recentOrderCount,
+        },
+      },
+      { new: true } // Return the updated document
     );
 
     // Return the updated user details
@@ -482,7 +546,7 @@ export const getRecentOrders = async (
   res: express.Response
 ) => {
   try {
-    const orders = await OrderModel.find().sort({ createdAt: 1 }).limit(10);
+    const orders = await OrderModel.find().sort({ createdAt: -1 }).limit(6);
 
     return res.status(200).json(httpStatusResponse(200, "", orders));
   } catch (error) {
@@ -496,30 +560,37 @@ export const getOrderHistories = async (
   res: express.Response
 ) => {
   try {
-    const { page = 20, asAdmin = false } = req.query as unknown as {
+    // Parse the query parameters and explicitly convert asAdmin to a boolean
+    const { page = 20, asAdmin = "false" } = req.query as unknown as {
       page?: number;
-      asAdmin: boolean;
+      asAdmin?: string;
     };
-    const { userId, role } = req.user;
 
-    if (!asAdmin) {
-      const orders = await OrderModel.find({ userId }).limit(page);
+    // Convert asAdmin to a boolean (if it's 'true', set it to true, otherwise false)
+    const isAdmin = asAdmin === "true";
+
+    const { userEmail, role } = req.user;
+
+    if (!isAdmin) {
+      const orders = await OrderModel.find({
+        "customer.email": userEmail,
+      }).limit(Number(page));
 
       return res.status(200).json(httpStatusResponse(200, "", orders));
     }
 
-    if (role === "user") {
+    if (isAdmin && role === "user") {
       return res
         .status(401)
         .json(
           httpStatusResponse(
             401,
-            "Only admin and moderators are allow to make this request"
+            "Only admin and moderators are allowed to make this request"
           )
         );
     }
 
-    const orders = await OrderModel.find().limit(page);
+    const orders = await OrderModel.find().limit(Number(page));
 
     return res.status(200).json(httpStatusResponse(200, "", orders));
   } catch (error) {
@@ -627,33 +698,18 @@ export const createNewOrder = async (
 ) => {
   try {
     const {
-      shippingAddress,
-      deliveryMethod,
-      user: u,
-      productIds,
+      address,
+      customer,
+      products: _products,
     } = req.body as IOrder & {
-      user?: string;
-      productIds: string[];
-    };
-
-    const userId = req.user?.userId; // Get authenticated userId if available
-    const uidAsEmail = (u: string) => {
-      if (u.includes("@")) return u;
-      return `${u}@gmail.com`;
+      products: { color: string; ids: string }[];
     };
 
     // Query for user's pending orders
-    const userOrders = await OrderModel.aggregate([
-      {
-        $match: {
-          orderStatus: "Pending",
-          $or: [{ userId: u }, { email: uidAsEmail(u) }, { userId }],
-        },
-      },
-      {
-        $sort: { orderDate: -1 }, // Sort by latest order first
-      },
-    ]);
+    const userOrders = await OrderModel.find({
+      orderStatus: "Pending",
+      email: customer.email,
+    }).sort({ createdAt: -1 }); // Sort by most recent first
 
     // Check if the user has more than 3 pending orders and cancel excess ones
     if (userOrders.length > 3) {
@@ -666,7 +722,9 @@ export const createNewOrder = async (
       );
     }
 
-    if (productIds.length === 0) {
+    const productIds = _products.map((product) => product.ids);
+
+    if (!productIds.length) {
       return res
         .status(400)
         .json(
@@ -674,54 +732,66 @@ export const createNewOrder = async (
         );
     }
 
+    // Fetch the products based on the provided IDs
     const products = await ProductModel.find({ _id: { $in: productIds } });
+
+    if (!products.length) {
+      return res
+        .status(400)
+        .json(httpStatusResponse(400, "No valid products found for the order"));
+    }
 
     // Map products by their ID for easy access
     const productMap: Record<string, IProduct> = {};
     products.forEach((product) => {
-      productMap[product.id] = product;
+      productMap[product._id] = product.toObject();
     });
 
-    // Populate `_items` array based on how many times each ID appears
-    const _items = productIds?.map((id) => productMap[id]);
+    // Build the items array for the order
+    const items: IOrderProducts = _products.map((product) => ({
+      colorPrefrence: product.color,
+      ...productMap[product.ids], // Assign product details by ID
+    }));
 
-    // Ensure that items are not empty
-    if (productIds.length === 0) {
+    const deliveryFee = calculateDeliveryPrice(address.state, address.lga);
+    if (!deliveryFee) {
       return res
         .status(400)
-        .json(httpStatusResponse(400, "Cannot create an order with no items."));
+        .json(
+          httpStatusResponse(400, "Delivery to this location is not supported")
+        );
     }
 
-    // Calculate the total amount for the order
-    const totalAmount =
-      (await calculatePriceItems(_items)) +
-      (deliveryMethod === "waybill" ? 5000 : 0);
+    const totalPrice = await calculatePriceItems(items);
 
-    // Create the new order first with a temporary paymentLink value
+    // Calculate the total amount for the order
+    const totalAmount = totalPrice + deliveryFee;
+
+    // Create the new order with a temporary paymentLink
     const order = new OrderModel({
-      billingAddress: shippingAddress,
-      deliveryMethod,
-      items: _items,
+      address,
+      items,
       orderDate: new Date(),
       paymentStatus: "Pending",
-      shippingAddress,
       totalAmount,
-      userId: u || userId,
+      deliveryFee,
+      customer,
       orderStatus: "Pending",
-      paymentLink: "pending", // Temporary value to satisfy Mongoose's required field
+      paymentLink: "pending",
     });
 
-    const newOrder = await order.save(); // Save the order and get the _id
+    const newOrder = await order.save(); // Save the order
 
     // Prepare the payment payload
     const checkoutPayload = {
       tx_ref: newOrder._id, // Use the order ID as tx_ref
       amount: totalAmount,
       currency: "NGN",
-      redirect_url: "https://example_company.com/success",
+      redirect_url: `${process.env.CLIENT_DOMAIN}/track-order/${newOrder._id}`,
       customer: {
-        email: uidAsEmail(u),
-        name: u || "Anonymous user",
+        email: customer.email,
+        name: customer.name,
+        phoneNumber: customer.phoneNumber,
       },
       session_duration: 1440 * 2, // 2-day session duration
       max_retry_attempt: 5,
@@ -742,6 +812,15 @@ export const createNewOrder = async (
     // Update the order with the actual payment link
     newOrder.paymentLink = resp.data.data.link;
     await newOrder.save(); // Save the order again with the updated paymentLink
+
+    await UserModel.findOneAndUpdate(
+      { email: customer.email },
+      { $inc: { "recentOrder.orders": 1 } }
+    );
+
+    const { orderConfirmationEmail } = successfulOrderEmail(order);
+
+    await sendEmail(orderConfirmationEmail, customer.email);
 
     // Return success response
     return res
@@ -911,11 +990,17 @@ export const editAddress = async (
 ) => {
   try {
     const { userId, role } = req.user;
-    const { deliveryAddress, isdefault, userId: uid, asAdmin } = req.body;
+    const { state, lga, userId: uid, asAdmin } = req.body;
+
+    if (!(state && lga)) {
+      return res
+        .status(400)
+        .json(httpStatusResponse(400, "Missing required parameter"));
+    }
 
     const update = {
-      "address.deliveryAddress": deliveryAddress,
-      "address.isdefault": isdefault,
+      "address.state": state,
+      "address.lga": lga,
     };
 
     if (asAdmin && role === "user") {
@@ -1392,9 +1477,10 @@ export const recievePayment = async (
         resp.data.status === "successful" &&
         resp.data.amount === meta.totalAmount
       ) {
-        await OrderModel.findOneAndUpdate(
+        const order = await OrderModel.findOneAndUpdate(
           { _id: meta._id },
-          { paymentStatus: "Paid" }
+          { paymentStatus: "Paid" },
+          { new: true }
         );
 
         const productIds = meta.items.map((item) => item._id);
@@ -1404,6 +1490,10 @@ export const recievePayment = async (
           { _id: { $in: productIds } },
           { $inc: { stock: -1 } } // Decrease the stock by 1
         );
+
+        const { paymentReceivedEmail } = successfulOrderEmail(order);
+
+        await sendEmail(paymentReceivedEmail, "zaliyasule@gmail.com");
 
         return res
           .status(200)
@@ -1670,7 +1760,7 @@ export const sendOrderReminder = async (
 
     const email = orderEmail(order, order.totalAmount);
 
-    await sendEmail(order.userId, email);
+    await sendEmail(order.customer.email, email);
 
     res
       .status(200)
@@ -1698,6 +1788,14 @@ export const joinNewsLetter = async (
       return res
         .status(400)
         .json(httpStatusResponse(400, "Valid email is required"));
+
+    const isExisting = await NewLetterModel.findOne({ email });
+
+    if (isExisting) {
+      return res
+        .status(409)
+        .json(httpStatusResponse(409, "You already join the news-letter"));
+    }
 
     await NewLetterModel.create({ email });
 

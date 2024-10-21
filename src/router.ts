@@ -4,6 +4,7 @@ import {
   allowOnlySuperUser,
 } from "./middleware";
 import {
+  _calculateDeliveryPrice,
   _calculatePriceItems,
   _createPromoBanner,
   _deleteProduct,
@@ -27,6 +28,7 @@ import {
   getCollections,
   getDashboardContent,
   getLatestDiscountedProduct,
+  getLGAs,
   getOrder,
   getOrderHistories,
   getProduct,
@@ -35,6 +37,7 @@ import {
   getPromoBanner,
   getRecentOrders,
   getSalesOverview,
+  getStates,
   getStorePromotion,
   getTopSellers,
   getUser,
@@ -62,18 +65,21 @@ router.get("/product-set/", getProductSet);
 router.get("/products/", getProducts);
 router.get("/products/:productId/", getProduct);
 router.post("/calculate-items-price/", _calculatePriceItems);
+router.get("/calculate-delivery-price/", _calculateDeliveryPrice);
 router.post("/join-newsletter/", joinNewsLetter);
 router.get("/get-message/", getAdminMessage);
 router.get("/get-promo-banner/", getPromoBanner);
 router.patch("/cancel-order/:orderId", cancelOrder);
 router.get("/get-store-sets/", getBuySet);
+router.get("/get-states/", getStates);
+router.get("/get-lga/:state", getLGAs);
+router.get("/order/:orderId/", getOrder);
 
 // Protected routes for users and admins
 router.get("/user/", allowOnlyAuthenticatedUsers, getUser);
 router.post("/edit-address/", allowOnlyAuthenticatedUsers, editAddress);
 router.get("/recent-orders/", allowOnlyAuthenticatedUsers, getRecentOrders);
 router.get("/order-histories/", allowOnlyAuthenticatedUsers, getOrderHistories);
-router.get("/order/:orderId/", allowOnlyAuthenticatedUsers, getOrder);
 router.get("/expense-insight/", allowOnlyAuthenticatedUsers, expenseInsight);
 
 // Admin-only routes

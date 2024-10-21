@@ -21,6 +21,7 @@ import {
 import express from "express";
 import { createTransport } from "nodemailer";
 import SMTPTransport from "nodemailer/lib/smtp-transport";
+import { nigeriaStateData } from "./data";
 
 dotenv.config();
 
@@ -510,3 +511,70 @@ export const formatCurrency = function (amount: number) {
 export const getAccessToken = (req: express.Request) => {
   return req.headers.authorization;
 };
+
+export function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  return distance;
+}
+
+export const calculateDeliveryPrice = (state: string, lga: string) => {
+  const companyStation = { lat: 9.0802, lng: 6.0176 }; // Assuming company station is in Lagos
+  const pricePer85KM = 850;
+
+  if (state === "Niger" && lga === "Bida") return 600;
+
+  if (!nigeriaStateData[state]?.coordinates) return null;
+
+  if (!nigeriaStateData[state].lgas[lga]) return null;
+
+  const stateLocation = nigeriaStateData[state].coordinates;
+  const lgaLocation = nigeriaStateData[state].lgas[lga];
+
+  const distanceToState = calculateDistance(
+    companyStation.lat,
+    companyStation.lng,
+    stateLocation.lat,
+    stateLocation.lng
+  );
+
+  const distanceToLGA = calculateDistance(
+    companyStation.lat,
+    companyStation.lng,
+    lgaLocation.lat,
+    lgaLocation.lng
+  );
+
+  const totalDistance = (distanceToState + distanceToLGA) / 2; // Average of distances
+  const price = Math.ceil(totalDistance / 85) * pricePer85KM;
+
+  return price;
+};
+
+// Function to list all states
+export function listStates() {
+  return Object.keys(nigeriaStateData);
+}
+
+// Function to list all LGAs in a state
+export function listLGAs(state: string) {
+  if (!nigeriaStateData[state]) {
+    console.error(`State "${state}" not found in the database.`);
+    return null;
+  }
+  return Object.keys(nigeriaStateData[state].lgas);
+}
