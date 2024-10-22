@@ -48,7 +48,6 @@ import { sign } from "jsonwebtoken";
 import mongoose from "mongoose";
 import {
   failedOrderEmail,
-  orderEmail,
   successfulOrderEmail,
   underpaidOrderEmail,
 } from "./emails";
@@ -820,7 +819,7 @@ export const createNewOrder = async (
 
     const { orderConfirmationEmail } = successfulOrderEmail(order);
 
-    await sendEmail(orderConfirmationEmail, customer.email);
+    await sendEmail(customer.email, orderConfirmationEmail);
 
     // Return success response
     return res
@@ -1758,9 +1757,15 @@ export const sendOrderReminder = async (
         .json(httpStatusResponse(404, "Order with this Id not found"));
     }
 
-    const email = orderEmail(order, order.totalAmount);
+    if (order.orderStatus === "Cancelled") {
+      return res
+        .status(400)
+        .json(httpStatusResponse(400, "User already cancelled the order"));
+    }
 
-    await sendEmail(order.customer.email, email);
+    const email = successfulOrderEmail(order);
+
+    await sendEmail(order.customer.email, email.orderReminderEmail);
 
     res
       .status(200)
@@ -1812,3 +1817,4 @@ export const joinNewsLetter = async (
     return res.status(500).json(httpStatusResponse(500));
   }
 };
+//
