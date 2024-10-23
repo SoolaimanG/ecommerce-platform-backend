@@ -28,7 +28,6 @@ import {
   getCollections,
   getDashboardContent,
   getLatestDiscountedProduct,
-  getLGAs,
   getOrder,
   getOrderHistories,
   getProduct,
@@ -47,6 +46,7 @@ import {
   sendMessageToUsers,
   sendOrderReminder,
   suggestedForYou,
+  userClaimsToHaveMakePayment,
 } from "./controller";
 import express from "express";
 
@@ -67,12 +67,12 @@ router.get("/products/:productId/", getProduct);
 router.post("/calculate-items-price/", _calculatePriceItems);
 router.get("/calculate-delivery-price/", _calculateDeliveryPrice);
 router.post("/join-newsletter/", joinNewsLetter);
+router.post("/user-claim-to-have-make-payment/", userClaimsToHaveMakePayment);
 router.get("/get-message/", getAdminMessage);
 router.get("/get-promo-banner/", getPromoBanner);
 router.patch("/cancel-order/:orderId", cancelOrder);
 router.get("/get-store-sets/", getBuySet);
 router.get("/get-states/", getStates);
-router.get("/get-lga/:state", getLGAs);
 router.get("/order/:orderId/", getOrder);
 
 // Protected routes for users and admins

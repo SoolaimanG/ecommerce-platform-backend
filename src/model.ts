@@ -83,8 +83,6 @@ const OrderSchema = new mongoose.Schema<IOrder>(
     totalAmount: { type: Number, required: true },
     address: {
       state: { type: "String", required: true },
-      lga: { type: "String", required: true },
-      address: { type: "String", required: true },
     },
     paymentStatus: {
       type: String,

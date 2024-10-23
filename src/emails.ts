@@ -1,5 +1,8 @@
 import { formatCurrency } from "./helper";
 import { IOrder } from "../types";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export function failedOrderEmail(orderDetails: IOrder, failureReason: string) {
   return `
@@ -182,7 +185,7 @@ export function successfulOrderEmail(order: IOrder) {
                   <p style="font-size: 16px; margin-bottom: 20px;">Dear ${
                     order.customer.name || "Valued Customer"
                   },</p>
-                  <p style="font-size: 16px; margin-bottom: 30px;">Thank you for your order. We're pleased to confirm that we've received your order and it's being processed.</p>
+                  <p style="font-size: 16px; margin-bottom: 30px;">Thank you for your order. We're pleased to confirm that we've received your order and will be process once payment has been received.</p>
                   
                   <table width="100%" cellpadding="10" cellspacing="0" style="background-color: #f8f8f8; border-radius: 6px; margin-bottom: 30px;">
                       <tr>
@@ -530,4 +533,81 @@ export function successfulOrderEmail(order: IOrder) {
     paymentReceivedEmail,
     orderReminderEmail,
   };
+}
+
+export function notifyAdminAboutClaimPaymentEmail(order: IOrder) {
+  const formatDate = (date: string) => new Date(date).toLocaleDateString();
+
+  return `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Payment Verification Required</title>
+  </head>
+  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; line-height: 1.6; color: #000000; background-color: #ffffff; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+          <tr>
+              <td style="padding: 24px;">
+                  <h1 style="color: #000000; text-align: center; font-size: 24px; font-weight: 600; margin-bottom: 24px;">Payment Verification Required</h1>
+                  <p style="font-size: 16px; color: #374151; margin-bottom: 16px;">Dear Admin,</p>
+                  <p style="font-size: 16px; color: #374151; margin-bottom: 24px;">A user has claimed to have made a payment for an order. Please verify this payment as soon as possible.</p>
+                  
+                  <table width="100%" cellpadding="12" cellspacing="0" style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 24px;">
+                      <tr>
+                          <td colspan="2" style="background-color: #000000; color: #ffffff; font-weight: 600; text-align: center; border-radius: 8px 8px 0 0; padding: 12px;">
+                              Order Details
+                          </td>
+                      </tr>
+                      <tr>
+                          <td style="font-weight: 600; color: #374151;">Order ID:</td>
+                          <td style="color: #374151;">${order._id}</td>
+                      </tr>
+                      <tr>
+                          <td style="font-weight: 600; color: #374151;">Customer Name:</td>
+                          <td style="color: #374151;">${
+                            order.customer.name
+                          }</td>
+                      </tr>
+                      <tr>
+                          <td style="font-weight: 600; color: #374151;">Order Total:</td>
+                          <td style="color: #374151;">${formatCurrency(
+                            order.totalAmount
+                          )}</td>
+                      </tr>
+                      <tr>
+                          <td style="font-weight: 600; color: #374151;">Order Date:</td>
+                          <td style="color: #374151;">${formatDate(
+                            order.orderDate as string
+                          )}</td>
+                      </tr>
+                  </table>
+                  
+                  <p style="font-size: 16px; color: #374151; margin-bottom: 16px;">Please take the following actions:</p>
+                  <ol style="font-size: 16px; color: #374151; margin-bottom: 24px; padding-left: 24px;">
+                      <li>Log in to the admin panel</li>
+                      <li>Navigate to the order details page</li>
+                      <li>Check the payment status and verify the transaction</li>
+                      <li>Update the order status accordingly</li>
+                  </ol>
+                  
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                      <tr>
+                          <td align="center">
+                              <a href="${
+                                process.env.CLIENT_DOMAIN +
+                                `/admin/order?orderId=${order._id}`
+                              }" style="background-color: #000000; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; font-size: 16px;">Verify Payment Now</a>
+                          </td>
+                      </tr>
+                  </table>
+                  
+                  <p style="font-size: 14px; color: #6b7280; text-align: center; margin-top: 24px;">This is an automated message. Please do not reply directly to this email.</p>
+              </td>
+          </tr>
+      </table>
+  </body>
+  </html>
+    `;
 }

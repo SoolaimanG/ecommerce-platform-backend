@@ -4,7 +4,6 @@ import {
   calculateDiscountPercentage,
   calculatePriceItems,
   createCollection,
-  createOrder,
   createProduct,
   createPromoBanner,
   deleteProduct,
@@ -13,7 +12,6 @@ import {
   editPromoBanner,
   editUser,
   httpStatusResponse,
-  listLGAs,
   listStates,
   sendEmail,
 } from "./helper";
@@ -48,6 +46,7 @@ import { sign } from "jsonwebtoken";
 import mongoose from "mongoose";
 import {
   failedOrderEmail,
+  notifyAdminAboutClaimPaymentEmail,
   successfulOrderEmail,
   underpaidOrderEmail,
 } from "./emails";
@@ -464,32 +463,65 @@ export const getStates = async (_: express.Request, res: express.Response) => {
   }
 };
 
-export const getLGAs = async (req: express.Request, res: express.Response) => {
-  try {
-    const { state } = req.params;
-
-    const stateLGAs = listLGAs(state);
-
-    return res.status(200).json(httpStatusResponse(200, undefined, stateLGAs));
-  } catch (error) {
-    return res.status(500).json(httpStatusResponse(500));
-  }
-};
-
 export const _calculateDeliveryPrice = async (
   req: express.Request,
   res: express.Response
 ) => {
   try {
-    const { state, lga } = req.query as unknown as {
+    const { state, quantity = 1 } = req.query as unknown as {
       state: string;
-      lga: string;
+      quantity: number;
     };
 
-    const price = calculateDeliveryPrice(state, lga);
+    const price = calculateDeliveryPrice(state) * Number(quantity);
 
     return res.status(200).json(httpStatusResponse(200, undefined, { price }));
   } catch (error) {
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const userClaimsToHaveMakePayment = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { orderId } = req.body;
+
+    // Validate orderId
+    if (!orderId) {
+      return res
+        .status(400)
+        .json(httpStatusResponse(400, "Order ID is required"));
+    }
+
+    // Find the order
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      return res.status(404).json(httpStatusResponse(404, "Order not found"));
+    }
+
+    // Update order status
+    order.paymentStatus = "Pending";
+    await order.save();
+
+    // Notify admin
+    await sendEmail(
+      process.env.HOST_EMAIL,
+      notifyAdminAboutClaimPaymentEmail(order)
+    );
+
+    // Respond to user
+    return res
+      .status(200)
+      .json(
+        httpStatusResponse(
+          200,
+          "Payment claim received. Our team will verify the payment shortly."
+        )
+      );
+  } catch (error) {
+    console.error("Error in userClaimsToHaveMakePayment:", error);
     return res.status(500).json(httpStatusResponse(500));
   }
 };
@@ -752,7 +784,7 @@ export const createNewOrder = async (
       ...productMap[product.ids], // Assign product details by ID
     }));
 
-    const deliveryFee = calculateDeliveryPrice(address.state, address.lga);
+    const deliveryFee = calculateDeliveryPrice(address.state) * items.length;
     if (!deliveryFee) {
       return res
         .status(400)

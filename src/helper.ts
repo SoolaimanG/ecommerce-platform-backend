@@ -532,35 +532,30 @@ export function calculateDistance(
   return distance;
 }
 
-export const calculateDeliveryPrice = (state: string, lga: string) => {
+export const calculateDeliveryPrice = (state: string) => {
   const companyStation = { lat: 9.0802, lng: 6.0176 }; // Assuming company station is in Lagos
-  const pricePer85KM = 850;
+  //const pricePer85KM = 1700;
 
-  if (state === "Niger" && lga === "Bida") return 600;
+  if (!nigeriaStateData[state]) return null;
 
-  if (!nigeriaStateData[state]?.coordinates) return null;
+  const stateLocation = nigeriaStateData[state];
 
-  if (!nigeriaStateData[state].lgas[lga]) return null;
+  //const distanceToState = calculateDistance(
+  //  companyStation.lat,
+  //  companyStation.lng,
+  //  stateLocation.lat,
+  //  stateLocation.lng
+  //);
 
-  const stateLocation = nigeriaStateData[state].coordinates;
-  const lgaLocation = nigeriaStateData[state].lgas[lga];
+  //const distanceToLGA = calculateDistance(
+  //  companyStation.lat,
+  //  companyStation.lng,
+  //  lgaLocation.lat,
+  //  lgaLocation.lng
+  //);
 
-  const distanceToState = calculateDistance(
-    companyStation.lat,
-    companyStation.lng,
-    stateLocation.lat,
-    stateLocation.lng
-  );
-
-  const distanceToLGA = calculateDistance(
-    companyStation.lat,
-    companyStation.lng,
-    lgaLocation.lat,
-    lgaLocation.lng
-  );
-
-  const totalDistance = (distanceToState + distanceToLGA) / 2; // Average of distances
-  const price = Math.ceil(totalDistance / 85) * pricePer85KM;
+  //const totalDistance = distanceToState / 2;
+  const price = nigeriaStateData[state];
 
   return price;
 };
@@ -571,10 +566,10 @@ export function listStates() {
 }
 
 // Function to list all LGAs in a state
-export function listLGAs(state: string) {
-  if (!nigeriaStateData[state]) {
-    console.error(`State "${state}" not found in the database.`);
-    return null;
-  }
-  return Object.keys(nigeriaStateData[state].lgas);
-}
+//export function listLGAs(state: string) {
+//  if (!nigeriaStateData[state]) {
+//    console.error(`State "${state}" not found in the database.`);
+//    return null;
+//  }
+//  return Object.keys(nigeriaStateData[state]);
+//}
