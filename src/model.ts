@@ -77,7 +77,7 @@ const OrderSchema = new mongoose.Schema<IOrder>(
       phoneNumber: { type: "String", required: true },
       note: { type: "String" },
     },
-    items: [ProductSchema],
+    items: [ProductSchema, { colorPrefrence: { type: String } }],
     deliveryFee: { type: Number, required: true },
     orderDate: { type: Date, default: Date.now },
     totalAmount: { type: Number, required: true },

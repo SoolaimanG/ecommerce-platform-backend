@@ -314,8 +314,6 @@ export const getProducts = async (
       collection?: string;
     };
 
-    console.log({ collection });
-
     // Initialize the query options
     let productQuery: any = {};
     let sortOption = {};
@@ -340,13 +338,13 @@ export const getProducts = async (
     if (filter) {
       switch (filter) {
         case "001":
-          sortOption = { price: -1 }; // Sort by price descending
+          sortOption = { price: 1 }; // Sort by price descending
           break;
         case "002":
-          sortOption = { price: 1 }; // Sort by price ascending
+          sortOption = { price: -1 }; // Sort by price ascending
           break;
         case "003":
-          sortOption = { stock: -1 }; // Sort by stock descending
+          sortOption = { stock: 1 }; // Sort by stock descending
           break;
         default:
           break;
@@ -355,7 +353,7 @@ export const getProducts = async (
 
     // Fetch products with pagination, filter, and sorting
     const products = await ProductModel.find(productQuery)
-      .sort(sortOption)
+      .sort({ ...sortOption, createdAt: -1 })
       .limit(Number(page))
       .exec();
 
@@ -592,7 +590,7 @@ export const getOrderHistories = async (
 ) => {
   try {
     // Parse the query parameters and explicitly convert asAdmin to a boolean
-    const { page = 20, asAdmin = "false" } = req.query as unknown as {
+    const { page, asAdmin } = req.query as unknown as {
       page?: number;
       asAdmin?: string;
     };
@@ -602,26 +600,17 @@ export const getOrderHistories = async (
 
     const { userEmail, role } = req.user;
 
-    if (!isAdmin) {
-      const orders = await OrderModel.find({
-        "customer.email": userEmail,
-      }).limit(Number(page));
+    if (isAdmin && ["admin", "superuser"].includes(role)) {
+      const orders = await OrderModel.find()
+        .sort({ createdAt: -1 })
+        .limit(Number(page));
 
       return res.status(200).json(httpStatusResponse(200, "", orders));
     }
 
-    if (isAdmin && role === "user") {
-      return res
-        .status(401)
-        .json(
-          httpStatusResponse(
-            401,
-            "Only admin and moderators are allowed to make this request"
-          )
-        );
-    }
-
-    const orders = await OrderModel.find().limit(Number(page));
+    const orders = await OrderModel.find({ "customer.email": userEmail })
+      .sort({ createdAt: -1 })
+      .limit(Number(page));
 
     return res.status(200).json(httpStatusResponse(200, "", orders));
   } catch (error) {
