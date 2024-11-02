@@ -28,6 +28,7 @@ import {
   getCollections,
   getDashboardContent,
   getLatestDiscountedProduct,
+  getNewsLetterSubscribers,
   getOrder,
   getOrderHistories,
   getProduct,
@@ -42,7 +43,8 @@ import {
   getUser,
   getUsers,
   joinNewsLetter,
-  recievePayment,
+  removeSubscriber,
+  sendEmailToSubscribers,
   sendMessageToUsers,
   sendOrderReminder,
   suggestedForYou,
@@ -171,8 +173,28 @@ router.post(
   allowOnlyAdminsAndSuperUsers,
   createOrEditBuySet
 );
+router.get(
+  "/news-letter-subscribers/",
+  allowOnlyAuthenticatedUsers,
+  allowOnlyAdminsAndSuperUsers,
+  getNewsLetterSubscribers
+);
 
-router.post("/verify-payment/", recievePayment);
+router.post(
+  "/send-email-to-subscribers/",
+  allowOnlyAuthenticatedUsers,
+  allowOnlySuperUser,
+  sendEmailToSubscribers
+);
+
+router.delete(
+  "/delete-subscribers/",
+  allowOnlyAuthenticatedUsers,
+  allowOnlySuperUser,
+  removeSubscriber
+);
+
+//router.post("/verify-payment/", recievePayment);
 
 export default (): express.Router => {
   return router;

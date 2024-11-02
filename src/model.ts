@@ -34,7 +34,6 @@ const UserSchema = new mongoose.Schema<IUser>(
     name: { type: "String", required: true },
     address: {
       state: { type: String },
-      lga: { type: String },
     },
     recentOrder: {
       orders: { type: "Number" },
@@ -77,7 +76,7 @@ const OrderSchema = new mongoose.Schema<IOrder>(
       phoneNumber: { type: "String", required: true },
       note: { type: "String" },
     },
-    items: [ProductSchema, { colorPrefrence: { type: String } }],
+    items: { type: [], required: true },
     deliveryFee: { type: Number, required: true },
     orderDate: { type: Date, default: Date.now },
     totalAmount: { type: Number, required: true },

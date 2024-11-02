@@ -154,7 +154,6 @@ export const createUser = async (user: IUser) => {
 export const editUser = async (userId: string, update: Record<string, any>) => {
   try {
     // Log the update operation for debugging
-    console.log("Updating user with ID:", userId, "with data:", update);
 
     // Find and update the user
     const updatedUser = await UserModel.findByIdAndUpdate(

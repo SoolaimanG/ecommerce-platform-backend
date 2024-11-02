@@ -45,10 +45,11 @@ import axios from "axios";
 import { sign } from "jsonwebtoken";
 import mongoose from "mongoose";
 import {
-  failedOrderEmail,
+  generalNewsLetterEmail,
   notifyAdminAboutClaimPaymentEmail,
+  orderCancelledEmail,
+  orderDispatchEmail,
   successfulOrderEmail,
-  underpaidOrderEmail,
 } from "./emails";
 import { v4 as uuidv4 } from "uuid";
 
@@ -357,8 +358,12 @@ export const getProducts = async (
       .limit(Number(page))
       .exec();
 
+    const totalProducts = await ProductModel.countDocuments();
+
     // Return the products
-    return res.status(200).json(httpStatusResponse(200, "", products));
+    return res
+      .status(200)
+      .json(httpStatusResponse(200, "", { products, totalProducts }));
   } catch (error) {
     console.error("Error fetching products:", error); // Log the error for debugging
     return res
@@ -431,7 +436,23 @@ export const cancelOrder = async (
   try {
     const { orderId } = req.params;
 
-    await OrderModel.findByIdAndUpdate(orderId, { orderStatus: "Cancelled" });
+    const order = await OrderModel.findByIdAndUpdate(
+      orderId,
+      { orderStatus: "Cancelled" },
+      { new: true }
+    );
+
+    order.paymentStatus = "Failed";
+    order.save();
+
+    const email = orderCancelledEmail(order);
+
+    await sendEmail(
+      order.customer.email,
+      email,
+      undefined,
+      "Your order has been cancelled"
+    );
 
     return res
       .status(200)
@@ -797,41 +818,44 @@ export const createNewOrder = async (
       deliveryFee,
       customer,
       orderStatus: "Pending",
-      paymentLink: "pending",
+      paymentLink: totalAmount < 50000 ? "pending" : "excluded",
     });
 
     const newOrder = await order.save(); // Save the order
 
-    // Prepare the payment payload
-    const checkoutPayload = {
-      tx_ref: newOrder._id, // Use the order ID as tx_ref
-      amount: totalAmount,
-      currency: "NGN",
-      redirect_url: `${process.env.CLIENT_DOMAIN}/track-order/${newOrder._id}`,
-      customer: {
-        email: customer.email,
-        name: customer.name,
-        phoneNumber: customer.phoneNumber,
-      },
-      session_duration: 1440 * 2, // 2-day session duration
-      max_retry_attempt: 5,
-      meta: newOrder.toObject(), // Add the order meta details
-    };
-
-    // Initiate payment using Flutterwave
-    const resp = await axios.post(
-      `https://api.flutterwave.com/v3/payments`,
-      checkoutPayload,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+    if (totalAmount < 50000) {
+      // Prepare the payment payload
+      const checkoutPayload = {
+        tx_ref: newOrder._id, // Use the order ID as tx_ref
+        amount: totalAmount,
+        currency: "NGN",
+        redirect_url: `${process.env.CLIENT_DOMAIN}/track-order/${newOrder._id}`,
+        customer: {
+          email: customer.email,
+          name: customer.name,
+          phoneNumber: customer.phoneNumber,
         },
-      }
-    );
+        session_duration: 1440 * 2, // 2-day session duration
+        max_retry_attempt: 5,
+        meta: newOrder.toObject(), // Add the order meta details
+      };
 
-    // Update the order with the actual payment link
-    newOrder.paymentLink = resp.data.data.link;
-    await newOrder.save(); // Save the order again with the updated paymentLink
+      // Initiate payment using Flutterwave
+      const resp = await axios.post(
+        `https://api.flutterwave.com/v3/payments`,
+        checkoutPayload,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+          },
+        }
+      );
+
+      // Update the order with the actual payment link
+      newOrder.paymentLink = resp.data.data.link;
+
+      await newOrder.save(); // Save the order again with the updated paymentLink
+    }
 
     await UserModel.findOneAndUpdate(
       { email: customer.email },
@@ -1010,9 +1034,9 @@ export const editAddress = async (
 ) => {
   try {
     const { userId, role } = req.user;
-    const { state, lga, userId: uid, asAdmin } = req.body;
+    const { state, userId: uid, asAdmin } = req.body;
 
-    if (!(state && lga)) {
+    if (!state) {
       return res
         .status(400)
         .json(httpStatusResponse(400, "Missing required parameter"));
@@ -1020,7 +1044,6 @@ export const editAddress = async (
 
     const update = {
       "address.state": state,
-      "address.lga": lga,
     };
 
     if (asAdmin && role === "user") {
@@ -1364,9 +1387,34 @@ export const _editOrder = async (
 ) => {
   try {
     const { orderId } = req.params;
-    const order = req.body;
+    const order = req.body as IOrder;
     //
+
     const newOrder = await editOrder(orderId, order);
+
+    if (newOrder.orderStatus === "Shipped") {
+      //perform some action
+
+      newOrder.paymentStatus = "Paid";
+      newOrder.save();
+
+      const email = orderDispatchEmail(newOrder);
+      const { paymentReceivedEmail } = successfulOrderEmail(newOrder);
+
+      await sendEmail(
+        newOrder.customer.email,
+        paymentReceivedEmail,
+        undefined,
+        "Your Payment has been recieved"
+      );
+      await sendEmail(
+        newOrder.customer.email,
+        email,
+        undefined,
+        "Your Order Has Been Dispatched"
+      );
+    }
+
     return res
       .status(200)
       .json(httpStatusResponse(200, "", newOrder.toObject()));
@@ -1454,88 +1502,88 @@ export const deleteMessage = async (
   }
 };
 
-export const recievePayment = async (
-  req: express.Request,
-  res: express.Response
-) => {
-  try {
-    const {
-      data: { id, status, meta, amount, customer, processor_response },
-    } = req.body as IFlutterwaveWebHook;
-    const secretHash = process.env.FLUTTERWAVE_SECRET_KEY!;
-    const flwSignature = req.headers["verif-hash"];
-
-    if (!flwSignature || flwSignature !== secretHash) {
-      return res
-        .status(401)
-        .json(
-          httpStatusResponse(401, "You are not allow to make this request")
-        );
-    }
-
-    if (status === "successful") {
-      if (amount < meta.totalAmount) {
-        await sendEmail(
-          customer.email,
-          underpaidOrderEmail(meta, amount),
-          "suleimaangee@gmail.com"
-        );
-        return res.status(200).json(httpStatusResponse(200));
-      }
-      //
-
-      const resp: IFlutterwaveWebHook = await axios.get(
-        `https://api.flutterwave.com/v3/transactions/${id}/verify`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-          },
-        }
-      );
-
-      if (
-        resp.data.status === "successful" &&
-        resp.data.amount === meta.totalAmount
-      ) {
-        const order = await OrderModel.findOneAndUpdate(
-          { _id: meta._id },
-          { paymentStatus: "Paid" },
-          { new: true }
-        );
-
-        const productIds = meta.items.map((item) => item._id);
-
-        // Decrease the stock by 1 for each product
-        await ProductModel.updateMany(
-          { _id: { $in: productIds } },
-          { $inc: { stock: -1 } } // Decrease the stock by 1
-        );
-
-        const { paymentReceivedEmail } = successfulOrderEmail(order);
-
-        await sendEmail(paymentReceivedEmail, "zaliyasule@gmail.com");
-
-        return res
-          .status(200)
-          .json(httpStatusResponse(200, "Payment recieved successfully"));
-      }
-
-      return res.status(401).json(httpStatusResponse(401));
-    }
-
-    if (status === "failed") {
-      await sendEmail(
-        customer.email,
-        failedOrderEmail(meta, processor_response)
-      );
-      return res.status(200);
-    }
-
-    return res.status(400).json(httpStatusResponse(400));
-  } catch (error) {
-    return res.status(500).json(httpStatusResponse(500));
-  }
-};
+//export const recievePayment = async (
+//  req: express.Request,
+//  res: express.Response
+//) => {
+//  try {
+//    const {
+//      data: { id, status, meta, amount, customer, processor_response },
+//    } = req.body as IFlutterwaveWebHook;
+//    const secretHash = process.env.FLUTTERWAVE_SECRET_KEY!;
+//    const flwSignature = req.headers["verif-hash"];
+//
+//    if (!flwSignature || flwSignature !== secretHash) {
+//      return res
+//        .status(401)
+//        .json(
+//          httpStatusResponse(401, "You are not allow to make this request")
+//        );
+//    }
+//
+//    if (status === "successful") {
+//      if (amount < meta.totalAmount) {
+//        await sendEmail(
+//          customer.email,
+//          underpaidOrderEmail(meta, amount),
+//          "suleimaangee@gmail.com"
+//        );
+//        return res.status(200).json(httpStatusResponse(200));
+//      }
+//      //
+//
+//      const resp: IFlutterwaveWebHook = await axios.get(
+//        `https://api.flutterwave.com/v3/transactions/${id}/verify`,
+//        {
+//          headers: {
+//            Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
+//          },
+//        }
+//      );
+//
+//      if (
+//        resp.data.status === "successful" &&
+//        resp.data.amount === meta.totalAmount
+//      ) {
+//        const order = await OrderModel.findOneAndUpdate(
+//          { _id: meta._id },
+//          { paymentStatus: "Paid" },
+//          { new: true }
+//        );
+//
+//        const productIds = meta.items.map((item) => item._id);
+//
+//        // Decrease the stock by 1 for each product
+//        await ProductModel.updateMany(
+//          { _id: { $in: productIds } },
+//          { $inc: { stock: -1 } } // Decrease the stock by 1
+//        );
+//
+//        const { paymentReceivedEmail } = successfulOrderEmail(order);
+//
+//        await sendEmail(paymentReceivedEmail, "zaliyasule@gmail.com");
+//
+//        return res
+//          .status(200)
+//          .json(httpStatusResponse(200, "Payment recieved successfully"));
+//      }
+//
+//      return res.status(401).json(httpStatusResponse(401));
+//    }
+//
+//    if (status === "failed") {
+//      await sendEmail(
+//        customer.email,
+//        failedOrderEmail(meta, processor_response)
+//      );
+//      return res.status(200);
+//    }
+//
+//    return res.status(400).json(httpStatusResponse(400));
+//  } catch (error) {
+//    return res.status(500).json(httpStatusResponse(500));
+//  }
+//};
 
 export const createOrEditStorePromotion = async (
   req: express.Request,
@@ -1838,4 +1886,87 @@ export const joinNewsLetter = async (
     return res.status(500).json(httpStatusResponse(500));
   }
 };
+
+export const getNewsLetterSubscribers = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { page = 20, query } = req.query as unknown as {
+      page?: number;
+      query?: string;
+    };
+
+    // Build search criteria
+    const searchCriteria = query
+      ? {
+          $or: [
+            { email: { $regex: query, $options: "i" } },
+            { id: { $regex: query, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const subscribers = await NewLetterModel.find(searchCriteria)
+      .sort({ createdAt: -1 })
+      .limit(Number(page));
+
+    return res
+      .status(200)
+      .json(httpStatusResponse(200, undefined, subscribers));
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const removeSubscriber = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { ids } = req.query as undefined as { ids: string[] };
+
+    await NewLetterModel.deleteMany({
+      id: {
+        $nin: ids,
+      },
+    });
+
+    return res
+      .status(200)
+      .json(
+        httpStatusResponse(
+          200,
+          ` ${ids.length}Subscriber${!!ids.length ? "s" : ""} `
+        )
+      );
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
+export const sendEmailToSubscribers = async (
+  req: express.Request,
+  res: express.Response
+) => {
+  try {
+    const { subject, body, recipients } = req.body as {
+      subject: string;
+      body: string;
+      recipients: string[];
+    };
+
+    const email = generalNewsLetterEmail(subject, body);
+
+    await sendEmail(recipients.join(","), email);
+
+    return res.status(200).json(httpStatusResponse(200));
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json(httpStatusResponse(500));
+  }
+};
+
 //
